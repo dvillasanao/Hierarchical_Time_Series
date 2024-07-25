@@ -19,7 +19,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE, cache.lazy = FALSE, collapse = TRUE, 
                       #class.source = "fold-hide",
-                      eval = TRUE
+                      eval = FALSE
                       )
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 setwd(here::here())
@@ -51,8 +51,53 @@ require(RColorBrewer)
 require(psych)
 ```
 
+# Introducción  
 
-**Base de datos**   
+La validación cruzada es una técnica crucial en el modelado predictivo para evaluar la capacidad generalizadora de los modelos. En el contexto de series temporales jerárquicas (HTS), donde los datos presentan una estructura jerárquica y múltiples niveles de agregación, la validación cruzada presenta desafíos únicos, ya que es una técnica robusta para evaluar la precisión y consistencia de los modelos predictivos. A través de la partición estratificada, el modelado individual y la agregación consistente, se puede asegurar que los modelos no solo sean precisos, sino también coherentes a través de todos los niveles de la jerarquía. Este enfoque permite una mejor toma de decisiones informadas basadas en pronósticos precisos y consistentes.     
+
+## Metodología
+
+1. **Descomposición de la Serie Temporal Jerárquica**
+
+- **Estructura Jerárquica**: La serie temporal se descompone en múltiples niveles jerárquicos. Por ejemplo, motivo de la migración pueden descomponerse en ventas por región, y estas a su vez, en desplazamintos a nivel nacional.  
+
+- **Series Temporales Individuales**: Cada nivel jerárquico representa una serie temporal individual que será modelada y validada.   
+
+2. **Particionamiento del Conjunto de Datos**  
+
+- **Método de Ventana Deslizante** (`Rolling Window): Es el más utilizado para series temporales. El conjunto de datos se divide en varias ventanas de entrenamiento y prueba. Por ejemplo, si se tienen datos trimestrales de 10 años, una ventana deslizante podría entrenar el modelo en los primeros siete años y probarlo en el octavo, desplazando la ventana hacia adelante en cada iteración.     
+
+- **Entrenamiento y Prueba de Estratificados**: En HTS, se debe asegurar que cada partición mantenga la estructura jerárquica. Las ventanas de entrenamiento y prueba deben incluir datos de todos los niveles jerárquicos para asegurar la coherencia y la agregación.   
+
+3. **Modelado y Pronóstico**   
+
+- **Modelos Individuales**: Cada serie temporal en la jerarquía se modela de forma independiente usando métodos como `ARIMA`, `ETS (Exponential Smoothing State Space Model)`, o modelos de machine learning.   
+
+- **Pronóstico Agregado**: Los pronósticos se realizan para cada nivel de la jerarquía. Los pronósticos individuales se agregan para asegurar la consistencia a través de todos los niveles.  
+
+**Evaluación del Desempeño**   
+
+- **Medidas de Error**: Se utilizan medidas como el `Error Cuadrático Medio (MSE)`, el `Error Absoluto Medio (MAE)`, y el `Error Absoluto Porcentual Medio (MAPE)` para evaluar el desempeño del modelo en cada nivel jerárquico.    
+- **Consistencia Jerárquica**: Además de las medidas de error, se evalúa la consistencia jerárquica, asegurando que los pronósticos agregados en los niveles inferiores coincidan con los pronósticos de los niveles superiores.     
+
+**Iteración y Ajuste**   
+
+- **Ajuste de Hiperparámetros**: Basado en el desempeño en las ventanas de prueba, se ajustan los hiperparámetros de los modelos.     
+- **Reentrenamiento**: El modelo se reentrena iterativamente, ajustando los parámetros y mejorando la precisión predictiva.   
+
+
+**Caso de la ENOE**    
+
+Datos: Se consideran los conjuntos de datos de manera trimestral desglosadas en 3 niveles de desagregación: Nivel 0 - Siendo la tasa de migración agregada, Nivel 1 – las 5 tasas de migración a nivel regional, Nivel 2 – las 32 tasas de migración a nivel ciudad y el Nivel 3 - se descompone los 5 motivos de migración.      
+Ventanas: Se utilizó una ventana con 160 series de nivel inferior para entrenamiento y 12 meses para prueba, deslizándose cada 3 meses.    
+Modelos: Se utilizó cómo método predictivo la caminata aleatoria (RW) para cada serie temporal.     
+Evaluación: Se calculó el `MAPE` para cada nivel jerárquico en cada ventana de prueba y ajuste los modelos en consecuencia.       
+
+**Base de datos**    
+
+Se cargan las bases de datos que contienen los cinco principales motivos de la migración, tomando como referencia los datos del 2005 al 2019.   
+
+- `(detectDates = TRUE)`; las fechas se detectan y se convierten automáticamente en objetos de fecha en R.  
 
 ```{r}
 T.Trabajo <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"),
@@ -77,9 +122,13 @@ T.Familia <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx
 ```
 
 
-Se divide entre la población, debido a que si toman los absolutos de las personas que cambiaron de residencia por alguno de los diferentes motivos de ausencia.  Estos tienden a ser mayores en algunas ciudades, debido se tiene mayor densidad de población.    
+Se divide entre la población, debido a que si toman los absolutos de las personas que cambiaron de residencia por alguno de los diferentes motivos de ausencia.  Estos tienden a ser mayores en algunas ciudades, debido se tiene mayor densidad de población.  Permitiendo así la comparabilidad entre ciudades por una razón de cada 1000 personas.   
 
-Permitiendo así la comparabilidad entre ciudades por una razón de cada 1000 personas.   
+Se define la función llamada `divide_columns` que toma dos data.frames (`df1` y `df2`). La función:   
+
+- Extrae todas las columnas de df1 y df2 desde la segunda columna en adelante.   
+- Usa la función `map2_dfc` del paquete `purrr` para dividir cada par de columnas correspondientes de df1 y df2, multiplicando el resultado por 1000.     
+- Se reconstruye el data.frame resultante combinando la primera columna de df1 con las columnas resultantes de la división.     
 
 
 ```{r}
@@ -122,6 +171,13 @@ mydata <- do.call(cbind.data.frame, list(T.Trabajo,
 
 ## Serie de tiempo jerárquica   
 
+**Serie de tiempo**  
+
+Los datos de la estructura general se convierten en objetos de series temporales (`ts`) utilizando la función `ts`. Cada serie temporal se define con:    
+
+- `start = 2005`: El primer año de la serie temporal es 2005.   
+- `end = 2019`: El último año de la serie temporal es 2019.   
+- `frequency = 4`: La frecuencia de la serie temporal es trimestral (4 trimestres por año).   
 
 ```{r}
 ts.mydata<- ts(mydata %>% select(., c(2:length(.))), start = 2005, end = 2019, frequency = 4)
@@ -133,11 +189,17 @@ Se utiliza la función `hts()` para crear una serie de tiempo jerárquica.
 
 Donde se utilizan los datos de último nivel y se utiliza el argumento `characters` donde los primeros dos caracteres corresponden al primer nivel (Región), los siguientes dos corresponden al segundo nivel (Ciudades) y como último los tres caracteres corresponden al motivo de la ausencia.   
 
-$\bullet$ TRA="Trabajo"   
-$\bullet$ EST="Estudio"   
-$\bullet$ UNI="Se casó o unió"   
-$\bullet$ DIV="Se divorció o separó"    
-$\bullet$ FAM="Reunirse con un familiar"      
+- `TRA` = "Trabajo"   
+- `EST` = "Estudio"   
+- `UNI` = "Se casó o unió"   
+- `DIV` = "Se divorció o separó"    
+- `FAM` = "Reunirse con un familiar"   
+
+**Definición de vectores:**   
+
+- `Regiones`: Un vector que contiene códigos de regiones repetidos para crear una etiqueta de región específica.
+- `Ciudades`: Un vector que contiene códigos de ciudades que se combinan con las regiones para crear nombres únicos.
+- `Motivo`: Un vector que contiene el motivo de la ausencia, repetido para igualar la longitud de los otros vectores.       
 
 ```{r}
 Regiones <- rep(c(rep("CE", 7),
@@ -168,7 +230,18 @@ Modelo2 <- hts(ts.mydata,#nodes=nodes,
 Modelo2$labels$`Level 1` <- c("Centro", "Noreste", "Noroeste", "Sureste", "Occidente")
 ```
 
+**Configuración de los métodos de pronóstico y horizontes de tiempo:**  
 
+- Se definen los métodos de pronóstico (`fmethod`), métodos de agregación (`method`), y niveles jerárquicos para el método de "middle-out" (`mo_levels`).   
+
+- Se crean nombres para identificar cada combinación de método y horizonte de tiempo.    
+
+- Se preparan listas `hts.train` y `hts.test` que contienen los datos de entrenamiento y prueba para diferentes periodos. 
+
+- Se realiza un bucle anidado para generar pronósticos utilizando diferentes combinaciones de métodos y horizontes de tiempo.  
+- Para cada combinación de método, horizonte y nivel jerárquico, se guarda el pronóstico en la lista `forecast.modelo2`.  
+
+Se preparan los datos, configura el modelo jerárquico, y realiza pronósticos utilizando diferentes métodos y horizontes de tiempo, guardando los resultados en una lista para su posterior análisis y comparación.   
 
 ```{r Motivo_Algoritmo, cache=TRUE}
 fmethod <- c("ets", "arima", "rw")
@@ -237,6 +310,7 @@ for(i in 1:length(fmethod)){
 }
 ```
 
+Se calcula el error de escala media absoluta (`MASE`) para diferentes combinaciones de métodos y horizontes de pronóstico, y guarda los resultados en un archivo Excel.    
 
 ```{r}
 labels <- c(paste0(rep(paste(fmethod), each = 4), "_", rep(paste(method[-1]), 3)),
@@ -262,7 +336,14 @@ rownames(tabla) <- t
 write.xlsx(tabla, paste0(here::here() ,"Base de datos/Modelos/MASE_Modelo_Final.xlsx"), row.names = TRUE, colnames = TRUE)
 ```
 
-# Modelo Final 
+# Modelo Final  
+
+Se realiza un pronóstico utilizando el modelo jerárquico `hts` para un horizonte de 4 períodos y calcula las métricas de precisión del pronóstico para los niveles jerárquicos `0` y `1`.    
+
+- `hts.train[[4]]`: Este es el conjunto de datos de entrenamiento correspondiente a un período específico.   
+- `h = `4`: Establece el horizonte de pronóstico a 4 períodos.    
+- `method = "tdgsf"`: Especifica el método de reconciliación de pronósticos, en este caso, el `"Top-Down Grouped Structure Forecasting"`.   
+- `fmethod = "ets"`: Utiliza el método `Exponential Smoothing State Space Model (ETS)` para el pronóstico.     
 
 ```{r}
 forecast.modelo3 <- forecast(hts.train[[4]],
@@ -277,7 +358,10 @@ tabla
 ```
 
 
-### Nivel 0 al 2: Total / Región / Ciudad  
+### Nivel 0 al 2: Total / Región / Ciudad   
+
+Se extraen las series temporales para los niveles 0, 1 y 2 tanto del modelo de pronóstico (`fcst1`) como del modelo original (`groups`). Esto te permitirá comparar los datos originales con los pronósticos generados a diferentes niveles de la jerarquía.    
+- `levels = 0:2`: Especifica que se deben extraer las series temporales para los niveles 0, 1 y 2 del modelo jerárquico.     
 
 ```{r}
 fcst2 <- aggts(forecast.modelo3, levels = 0:2)
@@ -307,13 +391,22 @@ p
 ggsave(paste0(here::here(), "/Graficos/Nivel 0 a 2.png"), p, width = 10, height = 7)
 ```
 
+```{r, echo = FALSE, fig.width=12, fig.height=12, out.width='100%', eval = TRUE}
+require(knitr)
+knitr::include_graphics(paste0(here::here(), "/Graficos/Nivel 0 a 2.png"))
+```
+
+
+Ahora bien, se combinan las series temporales originales y los pronósticos en una sola serie temporal, manteniendo la misma frecuencia y punto de partida que las series originales.   
 
 ```{r}
 tabla <- ts(rbind(groups, fcst2),
             start = start(groups), frequency = 4) #Frecuencia al año
 ```
 
-### Nivel 0: Total de casos de migración  
+### Nivel 0: Total de casos de migración   
+
+A continuación se muetran los datos desglosados a nivel Nacional.     
 
 ```{r}
 #http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
@@ -332,7 +425,13 @@ p
 ggsave(p, paste0(here::here(), "/Graficos/Nivel 0.png"), width = 10, height = 7)
 ```
 
-### Nivel 1 a 2: Nivel región y nivel ciudad    
+```{r, echo = FALSE, fig.width=12, fig.height=12, out.width='100%', eval = TRUE}
+require(knitr)
+knitr::include_graphics(paste0(here::here(), "/Graficos/Nivel 0.png"))
+```
+
+### Nivel 1 a 2: Nivel región y nivel ciudad   
+
 
 ```{r,fig.width=10,fig.height=5}
 p <- as_tibble(tabla[,-1]) %>%
@@ -365,13 +464,21 @@ p
 ggsave(p, paste0(here::here(), "/Graficos/Nivel 1 a 2-Nivel región y nivel ciudad.png"), width = 10, height = 7)
 ```
 
+```{r, echo = FALSE, fig.width=12, fig.height=12, out.width='100%', eval = TRUE}
+require(knitr)
+knitr::include_graphics(paste0(here::here(), "/Graficos/Nivel 1 a 2-Nivel región y nivel ciudad.png"))
+```
+
 ### Nivel 3: Motivos de ausencia en general   
+
+Haciendo uso de la función `aggts` extrae las series temporales de un objeto `hts` para cualquier nivel de desagregación. Para `aggts(Modelo2, level = 3)`, se especifica que queremos extraer las series temporales del nivel 23 del modelo jerárquico. Los niveles en un modelo jerárquico corresponden a diferentes niveles de agregación en la jerarquía de datos. 
+
+En modelo general, se están trabajando con tres niveles de desagregación (`Motivo de ausencia`, `Regiones` y `Ciudades`) y bien un Nivel Cero (`Total`).     
 
 ```{r}
 fcst3 <- aggts(forecast.modelo3, levels = 3)
 groups <- aggts(Modelo2, levels = 3)
 tabla <- ts(rbind(groups, fcst3), start = start(groups), frequency = 4) #Frecuencia al año
-
 ```
 
 ```{r,fig.width=10,fig.height=13}
@@ -420,6 +527,12 @@ p
 ggsave(p, paste0(here::here(), "/Graficos/Nivel 3 y Motivo de la ausencia.png"), width = 15, height = 10,dpi = 900)
 ```
 
+
+```{r, echo = FALSE, fig.width=12, fig.height=12, out.width='100%', eval = TRUE}
+require(knitr)
+knitr::include_graphics(paste0(here::here(), "/Graficos/Nivel 3 y Motivo de la ausencia.png"))
+```
+
 # Librerías  
 
 **Librerías que se usaron en el trabajo**   
@@ -433,8 +546,22 @@ Nos ha servido a construir modelos de series de tiempo con datos estructurales p
 
 # Referencias
 
-Encuesta Nacional de Ocupación y Empleo (ENOE), población de 15 años y más de edad. (n.d.). Retrieved March 30, 2020, from https://www.inegi.org.mx/programas/enoe/15ymas/  
+Athanasopoulos, G, Hyndman, RJ, Kourentzes, N, and Petropoulos, F (2017). Forecasting with Temporal Hierarchies. European Journal of Operational Research 262(1), 60–74.   
 
-Forecasting Hierarchical Time Series using R - Brillio Data Science - Medium. (n.d.). Retrieved March 30, 2020, from https://medium.com/brillio-data-science/forecasting-hierarchical-time-series-using-r-598828dba435  
+Cochran, W.G. (1977), Sampling Techniques. Jonh Wiley and Sons, New York.   
+
+Encuesta Nacional de Ocupación y Empleo (ENOE), población de 15 años y más de edad. (2020). 50 preguntas y respuestas. Instituto Nacional de Estadística Geografía e Informática. Retrieved May 7, 2020, from https://www.inegi.org.mx/programas/enoe/15ymas/default.html#Documentacion   
+
+
+Forecasting Hierarchical Time Series using R - Brillio Data Science - Medium. (n.d.). Retrieved March 30, 2020, from https://medium.com/brillio-data-science/forecasting-hierarchical-time-series-using-r-598828dba435   
+
+R. J. Hyndman and A. Koehler (2006), Another look at measures of forecast accuracy, International Journal of Forecasting, 22, 679-688.  
+
+Hyndman R.J., Ahmed R.A., Athanasopoulos G., Shang H.L., (2011), Optimal combination forecasts for hierarchical time series, Computational Statistics & Data Analysis 55(9), 2579 -2589.  
+
+Hyndman, R. J., Athanasopoulos, G., & Shang, H. L. (2014). hts: An R Package for Forecasting Hierarchical or Grouped Time Series. https://cran.r-project.org/web/packages/hts/vignettes/hts.pdf?forcedefault=true       
+
+Hyndman, RJ (2017). forecast: Forecasting Functions for Time Series and Linear Models. R package version 8.1. http://pkg.robjhyndman.com/forecast.   
+
 
 <a rel= "license" href= "http://creativecommons.org/licenses/by/4.0/"><img src= "https://i.creativecommons.org/l/by/4.0/88x31.png" alt= "Creative Commons Licence" style= "border-width:0"/></a><br />This work by [**Diana Villasana Ocampo**]{xmlns:cc= "http://creativecommons.org/ns#" property = "cc:attributionName"} is licensed under a <a rel= "license" href= "http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
