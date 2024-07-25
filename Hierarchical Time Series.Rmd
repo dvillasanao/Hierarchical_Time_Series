@@ -645,24 +645,35 @@ kable(describe(tabla),
 
 ```{r,eval=FALSE, echo = FALSE}
 #https://github.com/rstudio/dygraphs/issues/71
-saveWidget(G.Trabajo,"Grafico Trabajo.html",selfcontained = TRUE,libdir = NULL)
-saveWidget(G.Estudio,"Grafico Estudio.html",selfcontained = TRUE,libdir = NULL)
-saveWidget(G.Union,"Grafico Union.html",selfcontained = TRUE,libdir = NULL)
-saveWidget(G.Divorcio,"Grafico Divorcio.html",selfcontained = TRUE,libdir = NULL)
-saveWidget(G.Familiar,"Grafico Familiar.html",selfcontained = TRUE,libdir = NULL)
+saveWidget(G.Trabajo, "Grafico Trabajo.html", selfcontained = TRUE, libdir = NULL)
+saveWidget(G.Estudio, "Grafico Estudio.html", selfcontained = TRUE, libdir = NULL)
+saveWidget(G.Union, "Grafico Union.html", selfcontained = TRUE, libdir = NULL)
+saveWidget(G.Divorcio, "Grafico Divorcio.html", selfcontained = TRUE, libdir = NULL)
+saveWidget(G.Familiar, "Grafico Familiar.html", selfcontained = TRUE, libdir = NULL)
+
 width<- 1080
 height <- 610
 #Se convierten de html a .pdf
-webshot(url="Grafico Trabajo.html",file="Grafico Trabajo.png",
-        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
-webshot(url="Grafico Estudio.html",file="Grafico Estudio.png",
-        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
-webshot(url="Grafico Union.html",file="Grafico Union.png",
-        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
-webshot(url="Grafico Divorcio.html",file="Grafico Divorcio.png",
-        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
-webshot(url="Grafico Familiar.html",file="Grafico Familiar.png",
-        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
+webshot(url = "Grafico Trabajo.html", file = "Grafico Trabajo.png",
+        cliprect = c(10, 30, width + 50, height + 50),
+        vwidth = width, 
+        vheight = height)
+webshot(url = "Grafico Estudio.html", file = "Grafico Estudio.png",
+        cliprect = c(10, 30, width + 50, height + 50),
+        vwidth = width, 
+        vheight = height)
+webshot(url = "Grafico Union.html", file = "Grafico Union.png",
+        cliprect = c(10, 30, width + 50, height + 50),
+        vwidth = width, 
+        vheight = height)
+webshot(url = "Grafico Divorcio.html", file = "Grafico Divorcio.png",
+        cliprect = c(10, 30, width + 50, height + 50),
+        vwidth = width, 
+        vheight = height)
+webshot(url = "Grafico Familiar.html",file = "Grafico Familiar.png",
+        cliprect = c(10, 30, width + 50, height + 50),
+        vwidth = width, 
+        vheight = height)
 ``` 
 
 ## Modelo jerárquico
@@ -779,7 +790,7 @@ tibble::as_tibble(groups) %>%
                 y = "Rate",
                 x = "Year",
                 color = "Series") +
-            facet_wrap(.~Group) 
+            facet_wrap(. ~ Group) 
 ```
 
 ## Nivel 3: Motivo de la ausencia    
@@ -818,7 +829,7 @@ tibble::as_tibble(groups) %>%
                 y = "Rate",
                 x = "Year",
                 color = "Series") +
-            facet_wrap(.~Group+Motivo) 
+            facet_wrap(. ~ Group + Motivo) 
 ```
 
 Analizando la gráfica anterior el motivo de ausencia para "Reunirse con un familiar" es la que presenta un mayor número de casos migratorios" con respecto a los otros cuatro casos.      
