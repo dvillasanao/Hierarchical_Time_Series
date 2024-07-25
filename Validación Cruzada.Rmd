@@ -1,0 +1,440 @@
+---
+title: "Hierarchical Time Series"
+subtitle: "Validación cruzada"
+author: "Diana Villasana Ocampo"
+output:
+  html_notebook:
+    css: "styless.css"
+    code_folding: show
+    highlight: tango
+    theme: flatly
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = TRUE, cache.lazy = FALSE, collapse = TRUE, 
+                      #class.source = "fold-hide",
+                      eval = TRUE
+                      )
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+setwd(here::here())
+```
+
+```{r, echo = FALSE, results=FALSE, warning=FALSE, message=FALSE}
+#Font Stlye
+require(showtext)
+library(extrafont)
+windowsFonts()
+```
+
+```{r, echo = FALSE}
+require(dygraphs)
+require(hts)
+require(data.table)
+require(openxlsx)
+require(dplyr)
+require(kableExtra)
+require(knitr)
+require(ggpubr)
+require(ggplot2)
+require(webshot)
+require(htmlwidgets)
+require(stringr)
+require(tibble)
+require(tidyr)
+require(RColorBrewer)
+require(psych)
+```
+
+
+**Base de datos**   
+
+```{r}
+T.Trabajo <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"),
+                       sheet = "Trabajo", 
+                       colNames = TRUE, detectDates = TRUE)
+T.Estudio <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"), 
+                       sheet = "Estudio",
+                       colNames = TRUE, 
+                       detectDates = TRUE)
+T.Union <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"),
+                     sheet = "Union",
+                     colNames = TRUE, 
+                     detectDates = TRUE)
+T.Divorcio <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"), 
+                        sheet = "Divorcio", 
+                        colNames = TRUE, 
+                        detectDates = TRUE)
+T.Familia <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"), 
+                       sheet = "Reunirse con un familiar", 
+                       colNames = TRUE, 
+                       detectDates = TRUE)
+```
+
+
+Se divide entre la población, debido a que si toman los absolutos de las personas que cambiaron de residencia por alguno de los diferentes motivos de ausencia.  Estos tienden a ser mayores en algunas ciudades, debido se tiene mayor densidad de población.    
+
+Permitiendo así la comparabilidad entre ciudades por una razón de cada 1000 personas.   
+
+
+```{r}
+#Población Total  
+T.Poblacion <- read.xlsx(paste0(here::here(), "/Base de datos/Resultados ENOE.xlsx"), 
+                         sheet = "Población", 
+                         colNames = TRUE, 
+                         detectDates = TRUE)
+# Vector de tiempo
+Periodo <- T.Poblacion$Periodo #Se guarda el vector tiempo
+
+#Creamos una función personalizada para dividir los elementos desde la segunda columna en adelante
+divide_columns <- function(df1, df2) {
+                    df1_cols <- df1[, 2:ncol(df1)]
+                    df2_cols <- df2[, 2:ncol(df2)]
+                    
+                    # Aplicamos la división usando map2
+                    result_cols <- map2_dfc(df1_cols, df2_cols, ~ .x / .y * 1000)
+                    
+                    # Reconstruimos el data.frame con la primera columna de df1 y las columnas resultantes
+                    result <- bind_cols(df1[, 1, drop = FALSE], result_cols)
+                    result
+}
+
+tablas <- ls(pattern = "T.")
+for(i in 1:6){
+  assign(paste0(tablas[i]), divide_columns(get(paste0(tablas[i])), T.Poblacion))
+}
+```
+
+```{r, echo = TRUE}
+# Todo en un data.frame
+mydata <- do.call(cbind.data.frame, list(T.Trabajo,
+                                         T.Estudio %>% select(-c("Periodo")) ,
+                                         T.Union %>% select(-c("Periodo")) ,
+                                         T.Divorcio %>% select(-c("Periodo")) ,
+                                         T.Familia %>% select(-c("Periodo"))))
+```
+
+
+## Serie de tiempo jerárquica   
+
+
+```{r}
+ts.mydata<- ts(mydata %>% select(., c(2:length(.))), start = 2005, end = 2019, frequency = 4)
+```
+
+## Modelo jerárquico
+
+Se utiliza la función `hts()` para crear una serie de tiempo jerárquica. 
+
+Donde se utilizan los datos de último nivel y se utiliza el argumento `characters` donde los primeros dos caracteres corresponden al primer nivel (Región), los siguientes dos corresponden al segundo nivel (Ciudades) y como último los tres caracteres corresponden al motivo de la ausencia.   
+
+$\bullet$ TRA="Trabajo"   
+$\bullet$ EST="Estudio"   
+$\bullet$ UNI="Se casó o unió"   
+$\bullet$ DIV="Se divorció o separó"    
+$\bullet$ FAM="Reunirse con un familiar"      
+
+```{r}
+Regiones <- rep(c(rep("CE", 7),
+                  rep("NE", 5),
+                  rep("NW", 5),
+                  rep("WE", 8),
+                  rep("SO", 7)), 5)
+Ciudades <- rep(c("11", 	"24", 	"01", 	"32", 	"04", 	"14", 	"29",
+                  "21", 	"03", 	"06", 	"15", 	"09",
+                  "08", 	"19", 	"20", 	"30", 	"18", 	
+                  "12", 	"27", 	"02", 	"05", 	"13", 	"28", 	"22", 	"26", 	
+                  "31", 	"23", 	"07", 	"25", 	"17", 	"10", 	"16"), 5)
+
+Motivo <- c(rep("TRA", 32),
+            rep("EST", 32),
+            rep("UNI", 32),
+            rep("DIV", 32),
+            rep("FAM", 32))
+
+nombres <- paste0(Regiones, Ciudades, Motivo) #Largo de 7 | Regiones=2|Ciudades=2|Motivo=3
+colnames(ts.mydata) <- nombres
+
+nodes <- list(5, c(5, 32, 5)) #160 variables |Regiones=5|Ciudades=32|Motivos=5|  
+Modelo2 <- hts(ts.mydata,#nodes=nodes,
+               characters = c(2, 2, 3))
+
+#Cambiamos los labels 
+Modelo2$labels$`Level 1` <- c("Centro", "Noreste", "Noroeste", "Sureste", "Occidente")
+```
+
+
+
+```{r Motivo_Algoritmo, cache=TRUE}
+fmethod <- c("ets", "arima", "rw")
+method <- c("mo", "bu", "tdgsa", "tdgsf", "tdfp")
+mo_levels <- c("mo_level1", "mo_level2", "mo_level3")
+
+h <- c(paste0(rep("h", 10), 1:10))
+nombres <- c(paste0(rep(paste0(rep(paste(fmethod), each = 4),"_",
+                               rep(paste(method[-1]), 3)), each = 10),"_",
+                               rep(paste(h), 10)),
+           paste0(rep(paste0(rep(paste(fmethod), each = 3),"_",
+                             rep(paste(mo_levels), 3)), each = 10),"_",
+                             rep(paste(h), 9)))
+
+tiempo <- c(rep(2019, 4), rep(2018, 4), rep(2017, 3))
+trim <- c(rep(4:1, length = 11))
+tiempo
+trim
+
+hts.train <- NULL
+hts.test <- NULL
+for(i in 2:11){
+hts.train[[i-1]] <- window(Modelo2, end = c(tiempo[i], trim[i]))
+}
+for(i in 1:10){
+hts.test[[i]] <- window(Modelo2, start = c(tiempo[i], trim[i]))
+}
+
+forecast.modelo2 <- NULL
+for(k in 1:10){
+for(i in 1:length(fmethod)){
+ for(j in method){
+     if(j == "mo"){
+     forecast.modelo2[[paste0(fmethod[i], "_", j, "_level1", "_", "h", k)]] <- forecast(hts.train[[k]], 
+                                                                                        h = k, 
+                                                                                        method = paste(j),    
+                                                                                        fmethod = paste(fmethod[i]),
+                                                                                        level = 1,
+                                                                                        keep.fitted = TRUE,
+                                                                                        parallel = TRUE)
+     forecast.modelo2[[paste0(fmethod[i], "_", j, "_level2", "_", "h", k)]] <- forecast(hts.train[[k]], 
+                                                                                        h = k, 
+                                                                                        method = paste(j),    
+                                                                                        fmethod = paste(fmethod[i]),
+                                                                                        level = 2, 
+                                                                                        keep.fitted = TRUE,
+                                                                                        parallel = TRUE)
+     forecast.modelo2[[paste0(fmethod[i], "_", j, "_level3", "_", "h", k)]] <- forecast(hts.train[[k]], 
+                                                                                        h = k, 
+                                                                                        method = paste(j),    
+                                                                                        fmethod = paste(fmethod[i]),
+                                                                                        level = 3, 
+                                                                                        keep.fitted = TRUE,
+                                                                                        parallel=TRUE)
+  }
+    else{
+    forecast.modelo2[[paste0(fmethod[i], "_", j, "_", "h", k)]] <- forecast(hts.train[[k]], 
+                                                                            h = k, 
+                                                                            method = paste(j), 
+                                                                            fmethod = paste(fmethod[i]), 
+                                                                            keep.fitted = TRUE,
+                                                                            parallel = TRUE) 
+      }
+    }
+  }
+}
+```
+
+
+```{r}
+labels <- c(paste0(rep(paste(fmethod), each = 4), "_", rep(paste(method[-1]), 3)),
+            paste0(rep(paste(fmethod), each = 3), "_", rep(paste(mo_levels), 3)))
+
+ets <- c(paste0(rep(paste(fmethod[1]), each = 4), "_", paste(method[-1])),
+        paste0(rep(paste(fmethod[1]), each = 3), "_", paste(mo_levels)))
+
+tabla <- matrix(NA, nrow = length(labels) * 10, ncol = 6)
+
+t <- NULL
+for(j in 1:length(labels)){
+  for(i in 1:10){
+       s = 10 * (j - 1) + i
+       t[s] <- paste0(labels[j], "_h", i)
+       tabla[s,] <- accuracy.gts(forecast.modelo2[[paste0(labels[j], "_h", i)]], 
+                                 hts.test[[i]],
+                                 levels = 0:1)["MASE",]
+  }
+}
+colnames(tabla) <- c("Total", "Centro", "Noreste", "Noroeste", "Sureste", "Occidente")
+rownames(tabla) <- t
+write.xlsx(tabla, paste0(here::here() ,"Base de datos/Modelos/MASE_Modelo_Final.xlsx"), row.names = TRUE, colnames = TRUE)
+```
+
+# Modelo Final 
+
+```{r}
+forecast.modelo3 <- forecast(hts.train[[4]],
+                              h = 4, 
+                               method = "tdgsf", 
+                                fmethod = "ets",
+                                 keep.fitted = TRUE,
+                                  parallel = TRUE)
+
+tabla <- accuracy.gts(forecast.modelo3, hts.test[[4]], levels = 0:1)
+tabla
+```
+
+
+### Nivel 0 al 2: Total / Región / Ciudad  
+
+```{r}
+fcst2 <- aggts(forecast.modelo3, levels = 0:2)
+groups <- aggts(Modelo2, levels = 0:2)
+```
+
+```{r,fig.width=8,fig.height=5}
+p <- autoplot(fcst2, size = 0.5) +
+      autolayer(groups) +
+       geom_vline(xintercept = 2019, color = "#A8ABD7", linetype="dashed") +
+        theme_classic() +
+         theme(plot.title = element_text(size = 20),
+               plot.subtitle = element_text(size = 12),
+               legend.text = element_text(size = 7),
+               legend.key.size = unit(0.5, "lines"),
+               legend.position = "bottom") +
+          scale_color_viridis_d() + 
+           scale_x_continuous(breaks = seq(2005, 2025, by = 2)) +
+            scale_y_continuous(labels = scales::comma) +
+             guides(col = guide_legend(ncol = 15))+
+              labs(title = "Motivo de la ausencia 2005-2019",
+                   subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                   y = "Rate",
+                   x = "Year",
+                   color = "Series") 
+p
+ggsave(paste0(here::here(), "/Graficos/Nivel 0 a 2.png"), p, width = 10, height = 7)
+```
+
+
+```{r}
+tabla <- ts(rbind(groups, fcst2),
+            start = start(groups), frequency = 4) #Frecuencia al año
+```
+
+### Nivel 0: Total de casos de migración  
+
+```{r}
+#http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+p <- autoplot(tabla[,"Total"], colour = "#1720B7", size = 1.2, alpha = 0.6) +      
+      geom_vline(xintercept = 2019.5,color = "#A8ABD7", linetype = "dashed") +
+       theme_classic() +
+        theme(plot.title = element_text(size = 20),
+              plot.subtitle = element_text(size = 12)) + 
+              scale_x_continuous(breaks = seq(2005, 2025, by = 2)) +
+         labs(title = "Motivo de la ausencia 2005-2019",
+              subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+              y = "Rate",
+              x = "Year",
+              color = "Series")
+p
+ggsave(p, paste0(here::here(), "/Graficos/Nivel 0.png"), width = 10, height = 7)
+```
+
+### Nivel 1 a 2: Nivel región y nivel ciudad    
+
+```{r,fig.width=10,fig.height=5}
+p <- as_tibble(tabla[,-1]) %>%
+      tidyr::gather(Series) %>%
+       mutate(Date = rep(time(tabla), NCOL(tabla)-1),
+              Group = str_extract(Series, "([A-Za-z ]*)")) %>%
+        ggplot(aes(x = Date, y = value, group = Series, colour = Series)) +
+         geom_line() +
+          geom_vline(xintercept = 2019,color = "#A8ABD7", linetype = "dashed") +
+           theme_classic() + 
+            theme(plot.title = element_text(size = 20),
+                  plot.subtitle = element_text(size = 12),
+                  axis.text.x = element_text(angle = 90, hjust = 1),
+                  legend.text = element_text(size = 8),
+                  legend.key.width = unit(0.2, "cm"),
+                  legend.key.height = unit(0, "cm"),
+                  legend.spacing.x = unit(0.1, "cm"),
+                  legend.key.size = unit(0.5, "lines"),
+                  legend.position = "bottom") +
+             scale_color_viridis_d() +
+              scale_x_continuous(breaks = seq(2005, 2025, by = 5)) +
+               guides(col = guide_legend(ncol = 15)) +
+                labs(title = "Motivo de la ausencia 2005-2019",
+                     subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                     y = "Rate",
+                     x = "Year",
+                     color = "Series") +
+                 facet_wrap(. ~ Group) 
+p
+ggsave(p, paste0(here::here(), "/Graficos/Nivel 1 a 2-Nivel región y nivel ciudad.png"), width = 10, height = 7)
+```
+
+### Nivel 3: Motivos de ausencia en general   
+
+```{r}
+fcst3 <- aggts(forecast.modelo3, levels = 3)
+groups <- aggts(Modelo2, levels = 3)
+tabla <- ts(rbind(groups, fcst3), start = start(groups), frequency = 4) #Frecuencia al año
+
+```
+
+```{r,fig.width=10,fig.height=13}
+require(viridis)
+p <- as_tibble(tabla[,-1]) %>%
+      tidyr::gather(Series) %>%
+       mutate(Date = rep(time(tabla), NCOL(tabla)-1),
+              Group = str_extract(Series, "([A-Za-z ]*)"),
+              Motivo = stringr::str_sub(Series, 5, 7))%>%
+        mutate(Group = case_when(Group %in% "CE"~ "Centro",
+                                 Group %in% "NE" ~ "Noreste",
+                                 Group %in% "NW" ~ "Noroeste",
+                                 Group %in% "SO" ~ "Sureste",
+                                 Group %in% "WE" ~ "Occidente"),
+               Motivo = case_when(Motivo %in% "DIV" ~ "Divorcio",
+                                  Motivo %in% "EST" ~ "Estudio",
+                                  Motivo %in% "FAM" ~ "Familiar",
+                                  Motivo %in% "TRA" ~ "Trabajo",
+                                  Motivo %in% "UNI" ~ "Matrimonio")) %>%
+         ggplot(aes(x = Date, y = value, group = Series, colour = Series)) +
+          geom_line() +
+           geom_vline(xintercept = 2019, color = "#A8ABD7", linetype = "dashed") +
+            theme_classic() + 
+             theme(plot.title = element_text(size = 20, family = "CM Roman"),
+                   plot.subtitle = element_text(size = 12, family = "CM Roman"),
+                   axis.text.x = element_text(angle = 90, hjust = 1, family = "CM Roman"),
+                   axis.title.x = element_text(size = 10, family = "CM Roman"),
+                   axis.title.y = element_text(size = 10, family = "CM Roman"),
+                   legend.title = element_text(colour = "chocolate", size = 10, face="bold"),
+                   legend.text = element_text(size = 10, family = "CM Roman"),
+                   legend.key.width = unit(0.2, "cm"),
+                   legend.key.height = unit(0, "cm"),
+                   legend.spacing.x = unit(0.21, "cm"),
+                   legend.key.size = unit(0.01, "lines"),
+                   legend.position = "bottom") +
+              scale_color_manual(values=viridis_pal(option = "A")(160)) +
+               scale_x_continuous(breaks = seq(2005, 2025, by = 5)) +
+                guides(col = guide_legend(ncol = 17, override.aes = list(size = 1.5))) +
+                labs(title = "Motivo de la ausencia 2005-2019",
+                     subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                     y = "Rate of migration motive",
+                     x = "Year",
+                     color = "Series") +
+                 facet_wrap(. ~ Group + Motivo)
+p
+ggsave(p, paste0(here::here(), "/Graficos/Nivel 3 y Motivo de la ausencia.png"), width = 15, height = 10,dpi = 900)
+```
+
+# Librerías  
+
+**Librerías que se usaron en el trabajo**   
+
+```{r, echo = FALSE}
+names(sessionInfo()$otherPkgs)
+```
+
+
+Nos ha servido a construir modelos de series de tiempo con datos estructurales para fines de pronósticos. 
+
+# Referencias
+
+Encuesta Nacional de Ocupación y Empleo (ENOE), población de 15 años y más de edad. (n.d.). Retrieved March 30, 2020, from https://www.inegi.org.mx/programas/enoe/15ymas/  
+
+Forecasting Hierarchical Time Series using R - Brillio Data Science - Medium. (n.d.). Retrieved March 30, 2020, from https://medium.com/brillio-data-science/forecasting-hierarchical-time-series-using-r-598828dba435  
+
+<a rel= "license" href= "http://creativecommons.org/licenses/by/4.0/"><img src= "https://i.creativecommons.org/l/by/4.0/88x31.png" alt= "Creative Commons Licence" style= "border-width:0"/></a><br />This work by [**Diana Villasana Ocampo**]{xmlns:cc= "http://creativecommons.org/ns#" property = "cc:attributionName"} is licensed under a <a rel= "license" href= "http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.

@@ -1,0 +1,883 @@
+---
+title: "Encuesta de Nacional de Ocupación y Empleo (ENOE)"
+author: "Diana Villasana Ocampo"
+output:
+  html_document:
+          highlight: tango
+          theme: flatly
+          toc: true
+          toc_depth: '3'
+          toc_float:
+            collapsed: true
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
+knitr::opts_knit$set(root.dir ="~/Motivo de la migración/")
+```
+
+```{r,echo=FALSE}
+setwd("~/Motivo de la migración/")
+rm(list=ls())
+require(RColorBrewer)
+require(dygraphs)
+require(hts)
+require(data.table)
+require(openxlsx)
+require(dplyr)
+require(kableExtra)
+require(knitr)
+require(ggpubr)
+require(ggplot2)
+require(webshot)
+require(htmlwidgets)
+require(stringr)
+require(tibble)
+require(tidyr)
+require(RColorBrewer)
+require(psych)
+```
+
+# Motivo de la migración [^1]
+[^1]:(https://www.inegi.org.mx/programas/enoe/15ymas/)  
+
+Los datos son recopilados de la Encuesta Nacional de Ocupación y Empleo (ENOE), siendo, la fuente principal de información sobre el mercado laboral mexicano al ofrecer datos de manera trimestral de la fuerza de trabajo, ocupación, la informalidad laboral, la subocupación y desocupación.   
+
+La ENOE inicia su levantamiento en 2005 y se repite en intervalos regulares de tiempo, captando la información a nivel nacional. Este tipo de encuesta permite captar y conocer de mejor manera las características socioeconómicas de la población mexicana de 15 años y más. 
+
+El objetivo del trabajo es implementar y comparar las  diferentes series de tiempo de manera jerárquica y permitir el desglose de las causas de migración.      
+
+## Indicadores 
+
+Tomando las preguntas del cuestionario de las cuales son más de trescientas con 150 mil casos a nivel nacional en los diferentes periodos de tiempo.      
+ 
+ 
+Se toma como referencia la pregunta `cs_ad_mot` **Motivo de la migración ** en la cual se desglosa en las siguientes categorías. 
+
+$\bullet$ Trabajo     
+$\bullet$ Estudio   
+$\bullet$ Se casó o unió     
+$\bullet$ Se separó o divorció    
+$\bullet$ Problemas de salud   
+$\bullet$ Reunirse con la familia           
+$\bullet$ Inseguridad pública      
+$\bullet$ Falleció       
+$\bullet$ Otro Motivo       
+$\bullet$ No sabe  
+
+De las cuales solo se toman 5 casos para el propósito del presente trabajo.   
+
+
+**Base de datos**  
+
+```{r}
+T.Trabajo<-read.xlsx("Base de datos/Resultados ENOE.xlsx",sheet="Trabajo",colNames = TRUE,detectDates = TRUE)
+T.Estudio<-read.xlsx("Base de datos/Resultados ENOE.xlsx",sheet="Estudio",colNames = TRUE,detectDates = TRUE)
+T.Union<-read.xlsx("Base de datos/Resultados ENOE.xlsx",sheet="Union",colNames = TRUE,detectDates = TRUE)
+T.Divorcio<-read.xlsx("Base de datos/Resultados ENOE.xlsx",sheet="Divorcio",colNames = TRUE,detectDates = TRUE)
+T.Familia<-read.xlsx("Base de datos/Resultados ENOE.xlsx",sheet="Reunirse con un familiar",colNames = TRUE,detectDates = TRUE)
+```
+
+Se divide entre la población, debido a que si toman los absolutos de las personas que cambiaron de residencia por alguno de los diferentes motivos de ausencia.  Estos tienden a ser mayores en algunas ciudades, debido se tiene mayor densidad de población.    
+
+Permitiendo así la comparabilidad entre ciudades por una razón de cada 1000 personas.   
+
+
+
+```{r}
+#Población Total  
+T.Poblacion<-read.xlsx("Base de datos/Resultados ENOE.xlsx",sheet="Población",colNames = TRUE,detectDates = TRUE)
+Periodo<-T.Poblacion$Periodo #Se guarda el vector tiempo
+
+T.Trabajo<-data.frame(Periodo,T.Trabajo[,2:length(T.Trabajo)]/T.Poblacion[,2:length(T.Poblacion)]*1000)
+T.Estudio<-data.frame(Periodo,T.Estudio[,2:length(T.Estudio)]/T.Poblacion[,2:length(T.Poblacion)]*1000)
+T.Union<-data.frame(Periodo,T.Union[,2:length(T.Union)]/T.Poblacion[,2:length(T.Poblacion)]*1000)
+T.Divorcio<-data.frame(Periodo,T.Divorcio[,2:length(T.Divorcio)]/T.Poblacion[,2:length(T.Poblacion)]*1000)
+T.Familia<-data.frame(Periodo,T.Familia[,2:length(T.Familia)]/T.Poblacion[,2:length(T.Poblacion)]*1000)
+```
+
+```{r}
+# Todo en un data.frame
+mydata<-do.call(cbind.data.frame,list(T.Trabajo,T.Estudio[,2:length(T.Estudio)],
+                                      T.Union[,2:length(T.Union)],
+                                      T.Divorcio[,2:length(T.Divorcio)],
+                                      T.Familia[,2:length(T.Familia)]))
+```
+
+
+```{r}
+kable(head(mydata[1:6]),
+      digits = 2,
+      caption = "Tasas de migración por algún motivo de ausencia")%>%
+  kable_styling(full_width = TRUE,"striped",latex_options = "HOLD_position",font_size = 8)%>%
+   column_spec(1,bold=T,border_right = T)
+```
+
+El tipo de agregación jerárquico es geográfico donde se agrupan las 32 ciudades autorepresentadas en regiones.
+
+Se consideraron 5 regiones del país para que los cálculos no fueran tan extensos a la hora de interpretarlos. 
+
+```{r}
+tabla<-data.frame(Regiones=c(rep("Centro",7),rep("Noreste",5),rep("Noroeste",5),rep("Occidente",8),rep("Sureste",7)),
+                  CVE_Ciudad=c("11", 	"24", 	"01", 	"32", 	"04", 	"14", 	"29", 	"21", 	"03", 	"06", 	"15", 	"09", 	"08", 	"19", 	"20", 	"30", 	"18", 	"12", 	"27", 	"02", 	"05", 	"13", 	"28", 	"22", 	"26", 	"31", 	"23", 	"07", 	"25", 	"17", 	"10", 	"16"),
+                  Ciudad=c("Acapulco", 	"Cuernavaca", 	"México", 	"Pachuca", 	"Puebla", 	"Toluca", 	"Tlaxcala", 	"Durango", 	"Monterrey", 	"San Luis Potosí", 	"Saltillo", 	"Tampico", 	"Chihuahua", 	"Culiacán", 	"Hermosillo", 	"La Paz", 	"Tijuana", 	"Aguascalientes", 	"Colima", 	"Guadalajara", 	"León", 	"Morelia", 	"Querétaro", 	"Tepic", 	"Zacatecas", 	"Cancún", 	"Campeche", 	"Mérida", 	"Oaxaca", 	"Tuxtla Guutiérrez", 	"Veracruz", 	"Villahermosa"))
+
+tabla%>%
+    kable(align = "c",
+            col.names = c("Región","Clave","Ciudad"),
+                caption="Estructura general de las regiones") %>%
+        kable_styling(full_width = F,bootstrap_options ="condensed",latex_options = "HOLD_position") %>%
+          column_spec(c(1), bold = T,color="black") %>%
+            collapse_rows(columns = c(1,2), valign = "top")%>%
+                row_spec(0,color="white",background = "#031a3f")
+```
+
+## Estructura jerárquica  
+
+Cada uno de estos grupos de desglosan en categorías que están anidadas dentro de las categorías de grupos más grandes como 32 ciudades autorepresentadas y 5 regiones, por lo que se hace una recolección de 160 series de tiempo que siguen una estructura de agregación jerárquica. 
+
+![Esquema Jerárquico](C:/Users/JuanAlberto/Documents/Diny Documentos/MAESTRÍA EN ESTADÍSTICA APLICADA/4TO SEMESTRE/ALGORITMOS Y MÉTODOS COMPUTACIONALES/Projecto Final_Algortimos/Motivo de la migración/Graficos/Región.jpg){widht=100%,height=100%} 
+
+
+El número de series en el nivel inferior es de 160 series, por lo que las observaciones en el nivel último sumaran a las observaciones del nivel anterior y así sucesivamente.   
+
+Los 5 motivos de la ausencia se transforman en series de tiempo, para analizarlos cada uno posteriormente.
+
+```{r}
+ts.Trabajo<-ts(T.Trabajo[,2:length(T.Trabajo)],start=2005,end=2019,frequency = 4)
+ts.Estudio<-ts(T.Estudio[2:length(T.Estudio)],start=2005,end=2019,frequency = 4)
+ts.Union<-ts(T.Union[2:length(T.Union)],start=2005,end=2019,frequency = 4)
+ts.Divorcio<-ts(T.Divorcio[2:length(T.Divorcio)],start=2005,end=2019,frequency = 4)
+ts.Familia<-ts(T.Familia[2:length(T.Familia)],start=2005,end=2019,frequency = 4)
+```
+
+# Motivo de la ausencia: Trabajo
+
+Se analiza cómo caso particular el motivo de la ausencia por trabajo, para empezar  familiarizarse con la jerarquización del modelo y posteriormente agregar de manera general los demás motivos expuestos al inicio.   
+
+Utilizando la función `dygraph` permite observar de manera iterativa multiple series de tiempo.    
+
+```{r,fig.width=8,fig.height=6}
+G.Trabajo<-dygraph(ts.Trabajo,main="Trabajo",ylab="Migrantes",xlab="Periodo")%>%
+              dyRangeSelector()%>%
+                dyLegend(width = 650)%>%
+                  dyOptions(colors = RColorBrewer::brewer.pal(32, "Set2"))%>%
+                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 2))
+G.Trabajo
+```
+
+
+```{r,eval=FALSE}
+saveWidget(G.Trabajo,"Graficos/Grafico Trabajo.html",selfcontained = TRUE,libdir = NULL)
+width<- 1080
+height <- 610
+#https://github.com/rstudio/dygraphs/issues/71
+webshot(url="Graficos/Grafico Trabajo.html",
+          file="Graficos/Grafico Trabajo.png",
+            cliprect = c(10,30,width+50,height+50),
+              vwidth = width, 
+                vheight = height )
+```
+A continuación, se presenta de manera desagregada un análisis descriptivo de las 32 ciudades autorepresentadas. 
+
+```{r,fig.align='center'}
+tabla<-mydata[,grepl("Trabajo",names(mydata))]
+
+kable(describe(tabla),digits = 2,
+        caption="Análisis descriptivo: Motivo de trabajo")%>%
+   kable_styling(full_width = TRUE,
+                   bootstrap_options = c("striped","condensed"),
+                    font_size = 6,
+                      position = "center",
+                        latex_options="HOLD_position")
+```
+
+Por causas de trabajo la ciudad de Acapulco muestra una media de 4.62 personas que emigraron por trabajo de cada 1000 personas.   
+
+## Serie de tiempo jerárquica   
+
+Se utiliza la función `hts` para crear una serie de tiempo jerárquica. 
+
+Donde se utilizan los datos de último nivel y se utiliza el argumento `characters` donde los primeros dos caracteres corresponden al primer nivel (Región), los siguientes dos corresponden al segundo nivel (Ciudades) y como último los siete caracteres corresponden al motivo de la ausencia (Trabajo). 
+
+```{r}
+#Cambiamos los nombres de las columnas 
+Regiones<-c(rep("CE",7),rep("NE",5),rep("NW",5),rep("WE",8),rep("SO",7))
+Ciudades<-c("11", 	"24", 	"01", 	"32", 	"04", 	"14", 	"29", 	"21", 	"03", 	"06", 	"15", 	"09", 	"08", 	"19", 	"20", 	"30", 	"18", 	"12", 	"27", 	"02", 	"05", 	"13", 	"28", 	"22", 	"26", 	"31", 	"23", 	"07", 	"25", 	"17", 	"10", 	"16")
+Motivo<-c(rep("Trabajo",32))
+
+nombres<-paste0(Regiones,Ciudades,Motivo) ## Largo de 11 /Regiones=2,Ciudades=2,Motivo=7
+colnames(ts.Trabajo)<-nombres
+
+#Nodos 
+Modelo1<-hts(ts.Trabajo,nodes=list(32),characters = c(2,2,7))
+
+## Cambiamos las etiquetas 
+Modelo1$labels$`Level 1`<-c("Centro","Noreste","Noroeste","Sureste","Occidente")
+```
+
+
+```{r}
+str(Modelo1)
+summary(Modelo1)
+#p<-smatrix(Modelo1) #Resumen de la matriz de hierarquical time series
+#q<-allts(Modelo1) #Matrix de todos los niveles
+```
+
+## Nivel 1: Región
+
+```{r,fig.width=8,fig.height=8}
+Modelo1 %>% 
+      aggts(level=1) %>%
+        autoplot(size=1) + 
+          theme_classic() + 
+            theme(plot.title = element_text(size=20),
+                   plot.subtitle = element_text(size=12),
+                    legend.text = element_text(size=8),
+                      legend.key.size = unit(0.5, "lines")
+                  ) +
+               scale_color_viridis_d() + 
+            #    scale_color_manual(values=RColorBrewer::brewer.pal(32, "Set2")(5)) + 
+                  scale_x_continuous(breaks=seq(2005,2019,by=3)) +
+             labs(title = "Motivo de la ausencia 2005-2019",
+                    subtitle = "Trabajo",
+                      y="Rate",
+                        x="Year",
+                          color="Series") 
+```
+
+La gráfica superior muestra la tasa de migración por trabajo total por región. Donde se puede apreciar que la región Noreste y Noroeste presentan una menor moivilidad con respecto a las demás. 
+
+
+## Nivel 2: Ciudad autorepresentada
+
+A continuación se muetran los datos desglosados por las 32 ciudades. 
+
+```{r}
+Modelo1 %>% 
+  aggts(level=2) %>%
+    autoplot(size=0.5) + 
+      theme_classic() + 
+        theme(plot.title = element_text(size=20),
+               plot.subtitle = element_text(size=12),
+                legend.text = element_text(size=8),
+                  legend.spacing.x = unit(0.1,"cm"),
+                    legend.key.size = unit(0.5, "lines"),
+                      legend.position = "bottom"
+              ) +
+           scale_color_manual(values=colorRampPalette(brewer.pal(8,"Dark2"))(60)) + 
+             guides(col = guide_legend(ncol = 15)) +
+        labs(title = "Motivo de la ausencia 2005-2019",
+              subtitle = "Trabajo",
+                y="Rate",
+                 x="Year",
+                  color="Series") 
+```
+
+Si bien la gráfica anterior no permite su interpretabilidad debido a que todo el ensamble de las series están muy juntas. 
+
+Haciendo uso de la función `aggts` extrae las series temporales de un objeto `hts` para cualquier nivel de desagregación. 
+
+Para este caso, se están trabajando con dos niveles de desagregación (Regiones y Ciudades) y bien un Nivel Cero (Total).
+
+```{r}
+groups <- aggts(Modelo1, level=2)
+```
+
+La siguiente gráfica muestra las series de tiempo del nivel inferior, es decir, las tasas de migración por trabajo para cada una de las ciudades en sus respectivas regiones.  
+
+Ayudando así a visualizar de manera individual las series.  
+
+```{r,fig.width=8,fig.height=5}
+tibble::as_tibble(groups) %>%
+    tidyr::gather(Series) %>%
+       mutate(Date = rep(time(groups), NCOL(groups)),
+          Group =stringr::str_extract(Series, "([A-Za-z ]*)")) %>%
+             ggplot(aes(x=Date, y=value, group=Series, colour=Series)) +
+                geom_line() + 
+                  theme_classic() +
+                    theme(plot.title = element_text(size=20),
+                            plot.subtitle = element_text(size=12),
+                              axis.text.x = element_text(angle = 90, hjust = 1),
+                                legend.text = element_text(size=8),
+                                  legend.spacing.x = unit(0.1,"cm"),
+                                    legend.key.size = unit(0.5, "lines"),
+                                      legend.position = "bottom"
+                          ) +
+ scale_color_viridis_d() +                      #scale_color_manual(values=colorRampPalette(brewer.pal(8,"Set2"))(33)) + 
+                         scale_x_continuous(breaks=seq(1980,2015,by=5)) +
+                           scale_y_continuous(labels = scales::comma) +
+                guides(col = guide_legend(ncol = 15)) +
+                  labs(title = "Motivo de la ausencia 2005-2019",
+                        subtitle = "Trabajo",
+                          y="Rate",
+                             x="Year",
+                               color="Grupos") +
+                      facet_wrap(.~Group)
+```
+
+## Forecasting: Motivo de trabajo
+
+Utilizando la función `forecast()` del paquete `hts`.  
+
+Se presentan tres opciones integradas para producir pronósticos usando el parámetro `fmethod`: 
+
+$\bullet$ **ETS** `Exponential Smoothing`,   
+$\bullet$ Modelos **ARIMA** 
+$\bullet$ Caminatas aleatorias.     
+
+### Enfoques [^2]
+[^2]:(Forecasting Hierarchical Time Series using R - Brillio Data Science - Medium. (n.d.). Retrieved March 31, 2020, from https://medium.com/brillio-data-science/forecasting-hierarchical-time-series-using-r-598828dba435)
+
+$\bullet$  *Enfoque de abajo hacia arriba* **"bottom-up"**(`method="bu"`): Pronostica del nivel más bajo de la jerarquía, es decir, los motivos de ausencia y luego va agregando los resultados a la jerárquía generar el pronostico del nivel superior al último. 
+
+$\bullet$ *Enfoque de arriba hacia abajo* **"top-down"** (`method="tdfp"`): Pronostica en la jerarquía del nivel más alto, es decir, por regiones y luego va desglosando los resultados en la jerarquía.   
+
+$\bullet$  *Enfoque intermedio* **"middle-out" (`method="mo"`): Combina enfoques ascendentes y descendentes. Primero, se elige un "nivel medio" y se generan pronósticos para todas las series en este nivel. Para las series por encima del nivel medio, se generan pronósticos coherentes utilizando el enfoque de abajo hacia arriba agregando los pronósticos de "nivel medio" hacia arriba. Para las series por debajo del "nivel medio", se generan pronósticos coherentes utilizando un enfoque de arriba hacia abajo al desglosar los pronósticos de "nivel medio" hacia abajo.      
+
+```{r}
+#h<<-forecast horizon
+#method="mo"<<-"middle-out"
+f.modelo1 <- forecast(Modelo1, h = 10, method = "mo", level=1,fmethod = "arima", parallel = TRUE,keep.fitted = TRUE)
+```
+
+```{r}
+str(f.modelo1)
+summary(f.modelo1)
+```
+
+### Nivel 0 al 2 
+
+```{r}
+fcst1 <- aggts(f.modelo1,levels=0:2)
+fcst1
+groups <- aggts(Modelo1, levels=0:2)
+```
+
+```{r,fig.width=8,fig.height=5}
+autoplot(fcst1,size=0.5) +
+  autolayer(groups) +
+    geom_vline(xintercept=2019,color="#A8ABD7",linetype="dashed") +
+       theme_classic() +
+         theme(plot.title = element_text(size=18),
+                plot.subtitle = element_text(size=14),
+                  legend.text = element_text(size=7),
+                    legend.key.size = unit(0.5, "lines"),
+                      legend.position = "bottom") +
+           scale_color_viridis_d() + 
+             scale_x_continuous(breaks=seq(2005,2025,by=2)) +
+               scale_y_continuous(labels = scales::comma) +
+        guides(col = guide_legend(ncol = 15))+
+          labs(title = "Motivo de la ausencia 2005-2019",
+                subtitle = "Trabajo",
+                   y="Rate",
+                     x="Year",
+                       color="Series") 
+```
+
+
+```{r}
+tabla <- ts(rbind(groups, fcst1),start=start(groups), frequency=4)
+```
+
+### Nivel Total: Por motivo de trabajo
+
+```{r}
+#http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+autoplot(tabla[,"Total"],colour="#1720B7",size=1.2,alpha=0.6,linetype="dashed") +
+  geom_vline(xintercept=2019.5,color="#A8ABD7",linetype="dashed") +
+    theme_classic() +
+      scale_x_continuous(breaks=seq(2005,2025,by=2)) +
+        labs(title = "Motivo de la ausencia 2005-2019",
+              subtitle = "Trabajo",
+                y="Rate",
+                  x="Year",
+                    color="Series") 
+```
+
+```{r,fig.width=10,fig.height=5}
+as_tibble(tabla[,-1]) %>%
+  tidyr::gather(Series) %>%
+     mutate(Date = rep(time(tabla), NCOL(tabla)-1),
+            Group = str_extract(Series, "([A-Za-z ]*)") 
+            ) %>%
+        ggplot(aes(x=Date, y=value, group=Series, colour=Series)) +
+          geom_line() +
+            geom_vline(xintercept=2017,color="#A8ABD7",linetype="dashed") +
+              theme_classic() + 
+                theme(plot.title = element_text(size=18),
+                       plot.subtitle = element_text(size=14),
+                        axis.text.x = element_text(angle=90, hjust=1),
+                          legend.position = "bottom",
+                            legend.text = element_text(size=8),
+                              legend.key.size = unit(0.5, "lines")
+                      ) +
+                  scale_color_viridis_d() +
+                    scale_x_continuous(breaks=seq(1985,2025,by=10)) +
+            guides(col = guide_legend(ncol = 15))+
+              labs(title = "Motivo de la ausencia 2005-2019",
+                    subtitle = "Trabajo",
+                     y="Rate",
+                      x="Year",
+                       color="Series") +
+                 facet_wrap(.~Group) 
+```
+
+
+```{r,eval=FALSE}
+f.modelo1 %>% 
+   aggts(levels=0:2) %>%
+     autoplot(facet=FALSE) + 
+       theme_classic() +
+        theme(plot.title = element_text(size=18),
+                plot.subtitle = element_text(size=14),
+                  legend.text = element_text(size=7),
+                    legend.key.size = unit(0.5, "lines")) +
+          scale_color_viridis_d() +
+     labs(title = "Motivo de la ausencia 2005-2019",
+           subtitle = "Trabajo",
+            y="Rate",
+              x="Year",
+                color="Series")
+```
+
+
+# Motivos de ausencia en general
+
+Utilizando los 5 motivos de ausencia 
+
+Serie de tiempo 
+
+```{r}
+ts.mydata<-ts(mydata[,2:length(mydata)],start=2005,end=2019,frequency = 4)
+```
+
+```{r,fig.width=8,fig.height=6}
+G.Trabajo<-dygraph(ts.Trabajo,main="Trabajo",ylab="Migrantes",xlab="Periodo")%>%
+              dyRangeSelector()%>%
+                dyLegend(width = 650)%>%
+                  dyOptions(colors = RColorBrewer::brewer.pal(32, "Set2"))%>%
+                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 2))
+G.Trabajo
+```
+
+
+```{r,fig.width=8,fig.height=6}
+G.Estudio<-dygraph(ts.Estudio,main="Estudio",ylab="Migrantes",xlab="Periodo")%>%
+             dyRangeSelector()%>%
+              dyLegend(width = 650)%>%
+               dyOptions(colors = RColorBrewer::brewer.pal(32, "Set2"))%>%
+                  dyHighlight(highlightSeriesOpts = list(strokeWidth = 2))
+G.Estudio
+```
+
+```{r,fig.align='center'}
+tabla<-mydata[,grepl("Estudio",names(mydata))]
+
+kable(describe(tabla),digits = 2)%>%
+  kable_styling(full_width = TRUE,
+                 bootstrap_options = c("striped"),
+                  font_size = 7,
+                    position = "center",
+                      latex_options="HOLD_position")
+```
+
+```{r,fig.width=8,fig.height=6}
+G.Union<-dygraph(ts.Union,main="Se unió o casó",ylab="Migrantes",xlab="Periodo")%>%
+           dyRangeSelector()%>%
+             dyLegend(width = 650)%>%
+               dyOptions(colors = RColorBrewer::brewer.pal(32, "Set2"))%>%
+                 dyHighlight(highlightSeriesOpts = list(strokeWidth = 2))
+G.Union
+```
+
+```{r,fig.align='center'}
+tabla<-mydata[,grepl("Union",names(mydata))]
+
+kable(describe(tabla),digits = 2)%>%
+  kable_styling(full_width = TRUE,
+                  bootstrap_options = c("striped"),
+                    font_size = 7,
+                      position = "center",
+                        latex_options="HOLD_position")
+```
+
+
+```{r,fig.width=8,fig.height=6}
+G.Divorcio<-dygraph(ts.Divorcio,main="Se dicorció o separó",ylab="Migrantes",xlab="Periodo")%>%
+              dyRangeSelector()%>%
+                dyLegend(width = 650)%>%
+                  dyOptions(colors = RColorBrewer::brewer.pal(32, "Set2"))%>%
+                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 2))
+G.Divorcio
+```
+
+```{r,fig.align='center'}
+tabla<-mydata[,grepl("Divorcio",names(mydata))]
+
+kable(describe(tabla),digits = 2)%>%
+  kable_styling(full_width = TRUE,
+                  bootstrap_options = c("striped"),
+                    font_size = 7,
+                      position = "center",
+                        latex_options="HOLD_position")
+```
+
+
+```{r,fig.width=8,fig.height=6}
+G.Familiar<-dygraph(ts.Familia,main="Reunirse con un familiar",ylab="Migrantes",xlab="Periodo")%>%
+              dyRangeSelector()%>%
+                dyLegend(width = 650)%>%
+                  dyOptions(colors = RColorBrewer::brewer.pal(32, "Set2"))%>%
+                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 2))
+G.Familiar
+```
+
+```{r,fig.align='center'}
+tabla<-mydata[,grepl("Familiar",names(mydata))]
+
+kable(describe(tabla),digits = 2)%>%
+  kable_styling(full_width = TRUE,
+                  bootstrap_options = c("striped"),
+                    font_size = 7,
+                      position = "center",
+                        latex_options="HOLD_position")
+```
+
+
+```{r,eval=FALSE}
+#https://github.com/rstudio/dygraphs/issues/71
+saveWidget(G.Trabajo,"Grafico Trabajo.html",selfcontained = TRUE,libdir = NULL)
+saveWidget(G.Estudio,"Grafico Estudio.html",selfcontained = TRUE,libdir = NULL)
+saveWidget(G.Union,"Grafico Union.html",selfcontained = TRUE,libdir = NULL)
+saveWidget(G.Divorcio,"Grafico Divorcio.html",selfcontained = TRUE,libdir = NULL)
+saveWidget(G.Familiar,"Grafico Familiar.html",selfcontained = TRUE,libdir = NULL)
+width<- 1080
+height <- 610
+#Se convierten de html a .pdf
+webshot(url="Graficos/Grafico Trabajo.html",file="Graficos/Grafico Trabajo.png",
+        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
+webshot(url="Graficos/Grafico Estudio.html",file="Graficos/Grafico Estudio.png",
+        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
+webshot(url="Graficos/Grafico Union.html",file="Graficos/Grafico Union.png",
+        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
+webshot(url="Graficos/Grafico Divorcio.html",file="Graficos/Grafico Divorcio.png",
+        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
+webshot(url="Graficos/Grafico Familiar.html",file="Graficos/Grafico Familiar.png",
+        cliprect = c(10,30,width+50,height+50),vwidth = width, vheight = height )
+```
+
+## Modelo jerárquico
+
+Se utiliza la función `hts()` para crear una serie de tiempo jerárquica. 
+
+Donde se utilizan los datos de último nivel y se utiliza el argumento `characters` donde los primeros dos caracteres corresponden al primer nivel (Región), los siguientes dos corresponden al segundo nivel (Ciudades) y como último los tres caracteres corresponden al motivo de la ausencia.   
+
+$\bullet$ TRA="Trabajo"   
+$\bullet$ EST="Estudio"   
+$\bullet$ UNI="Se casó o unió"   
+$\bullet$ DIV="Se divorció o separó"    
+$\bullet$ FAM="Reunirse con un familiar"      
+
+```{r}
+Regiones<-rep(c(rep("CE",7),rep("NE",5),rep("NW",5),rep("WE",8),rep("SO",7)),5)
+Ciudades<-rep(c("11", 	"24", 	"01", 	"32", 	"04", 	"14", 	"29", 	"21", 	"03", 	"06", 	"15", 	"09", 	"08", 	"19", 	"20", 	"30", 	"18", 	"12", 	"27", 	"02", 	"05", 	"13", 	"28", 	"22", 	"26", 	"31", 	"23", 	"07", 	"25", 	"17", 	"10", 	"16"),5)
+Motivo<-c(rep("TRA",32),rep("EST",32),rep("UNI",32),rep("DIV",32),rep("FAM",32))
+
+nombres<-paste0(Regiones,Ciudades,Motivo) #Largo de 7 | Regiones=2|Ciudades=2|Motivo=3
+colnames(ts.mydata)<-nombres
+
+nodes<-list(160,c(5,32,5)) #160 variables |Regiones=5|Ciudades=32|Motivos=5|  
+Modelo2<-hts(ts.mydata,nodes=nodes,characters = c(2,2,3))
+
+#Cambiamos los labels 
+Modelo2$labels$`Level 1`<-c("Centro","Noreste","Noroeste","Sureste","Occidente")
+```
+
+### Nivel 1: Región  
+
+```{r}
+Modelo2 %>% 
+  aggts(level=1) %>%
+    autoplot(size=1) + 
+      theme_classic() + 
+        theme(plot.title = element_text(size=20),
+               plot.subtitle = element_text(size=12),
+                legend.text = element_text(size=8),
+                  legend.key.size = unit(0.2,"cm")) +
+            scale_color_viridis_d() + 
+              scale_color_manual(values=RColorBrewer::brewer.pal(5, "Dark2")) + 
+                scale_x_continuous(breaks=seq(2005,2019,by=2)) +
+          labs(title = "Motivo de la ausencia 2005-2019",
+                subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                  y="Rate",
+                    x="Year",
+                      color="Series") 
+```
+
+## Nivel 2: Cuidad autorepresentada  
+
+```{r}
+Modelo2 %>% 
+  aggts(level=2) %>%
+      autoplot(size=0.5) + 
+        theme_classic() + 
+            theme(plot.title = element_text(size=20),
+                   plot.subtitle = element_text(size=12),
+                    legend.text = element_text(size=8),
+                     legend.key.size = unit(0.5, "lines"),
+                      legend.position = "bottom"
+                  ) +
+               scale_color_manual(values=colorRampPalette(brewer.pal(8,"Dark2"))(60)) + 
+           guides(col = guide_legend(ncol = 15))+
+            labs(title = "Motivo de la ausencia 2005-2019",
+                  subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                    y="Rate",
+                     x="Year",
+                      color="Series") 
+```
+
+Si bien la gráfica anterior no permite su interpretabilidad debido a que todo el ensamble de las series están muy juntas. 
+
+Haciendo uso de la función `aggts` extrae las series temporales de un objeto `hts` para cualquier nivel de desagregación. 
+
+```{r}
+groups <- aggts(Modelo2, level=2)
+```
+
+```{r,fig.width=8,fig.height=5}
+tibble::as_tibble(groups) %>%
+  tidyr::gather(Series) %>%
+    mutate(Date = rep(time(groups), NCOL(groups)),
+           Group =stringr::str_extract(Series, "([A-Za-z ]*)")
+           ) %>%
+       ggplot(aes(x=Date, y=value, group=Series, colour=Series)) +
+         geom_line() + 
+           theme_classic() +
+             theme(plot.title = element_text(size=20),
+                     plot.subtitle = element_text(size=12),
+                      axis.text.x = element_text(angle = 90, hjust = 1),
+                       legend.text = element_text(size=8),
+                        legend.key.size = unit(0.5, "lines"),
+                          legend.position = "bottom"
+                   ) +
+                scale_color_viridis_d() +
+               #scale_color_manual(values=colorRampPalette(brewer.pal(8,"Dark2"))(33)) + 
+                 scale_x_continuous(breaks=seq(1980,2015,by=5)) +
+                   scale_y_continuous(labels = scales::comma) +
+             guides(col = guide_legend(ncol = 15))+
+               labs(title = "Motivo de la ausencia 2005-2019",
+                     subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                       y="Rate",
+                         x="Year",
+                           color="Series") +
+                  facet_wrap(.~Group) 
+```
+
+## Nivel 3: Motivo de la ausencia    
+
+En modelo general, se están trabajando con tres niveles de desagregación (Motivo de trabajo, Regiones y Ciudades) y bien un Nivel Cero (Total).
+```{r}
+groups <- aggts(Modelo2, level=3)
+```
+
+```{r,fig.width=10,fig.height=12}
+#https://stringr.tidyverse.org/reference/str_locate.html
+tibble::as_tibble(groups) %>%
+  tidyr::gather(Series) %>%
+    mutate(Date = rep(time(groups), NCOL(groups)),
+           Group =stringr::str_extract(Series, "([A-Za-z ]*)"),
+           Motivo=stringr::str_sub(Series,5,7)
+           )%>%
+      ggplot(aes(x=Date, y=value, group=Series, colour=Series)) +
+        geom_line() + 
+          theme_classic() +
+            theme(plot.title = element_text(size=20),
+                    plot.subtitle = element_text(size=12),
+                      axis.text.x = element_text(angle = 90, hjust = 1),
+                        legend.text = element_text(size=8),
+                          legend.key.width=unit(0.2,"cm"),
+                            legend.key.height = unit(0,"cm"),
+                              legend.spacing.x = unit(0,"cm"),
+                                legend.key.size = unit(0.5, "lines"),
+                                  legend.position = "bottom"
+                  ) +
+               scale_color_viridis_d() +
+              #scale_color_manual(values=colorRampPalette(brewer.pal(8,"Dark2"))(160)) + 
+                scale_x_continuous(breaks=seq(1980,2015,by=5)) +
+                 scale_y_continuous(labels = scales::comma) +
+         guides(col = guide_legend(ncol = 15))+
+           labs(title = "Motivo de la ausencia 2005-2019",
+                  subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                    y="Rate",
+                      x="Year",
+                        color="Series") +
+              facet_wrap(.~Group+Motivo) 
+```
+
+Analizando la gráfica anterior el motivo de ausencia para "Reunirse con un familiar" es la que presenta un mayor número de casos migratorios" con respecto a los otros cuatro casos.      
+
+
+```{r}
+#print(Modelo2)
+#smatrix(Modelo2)
+#allts(Modelo2)
+```
+
+## Forecasting: Motivo de la ausencia en general   
+
+Se espera que los pronósticos sean consistentes con la estructura de agregación de las series de  tiempo al agruparlas.   
+
+```{r}
+#h=forescast horizon
+#method<-"mo","bu","tdfp"
+f.modelo2 <- forecast(Modelo2, h = 10, method = "mo", level=2,fmethod = "arima", parallel = TRUE,keep.fitted = TRUE)
+```
+
+```{r}
+summary(f.modelo2)
+```
+
+### Nivel 0 al 2: Total / Región / Ciudad  
+
+```{r}
+fcst2 <- aggts(f.modelo2,levels=0:2)
+groups <- aggts(Modelo2, levels=0:2)
+```
+
+```{r,fig.width=8,fig.height=5}
+autoplot(fcst2,size=0.5) +
+  autolayer(groups) +
+    geom_vline(xintercept=2019,color="#A8ABD7",linetype="dashed") +
+       theme_classic() +
+        theme(plot.title = element_text(size=20),
+                plot.subtitle = element_text(size=12),
+                  legend.text = element_text(size=7),
+                    legend.key.size = unit(0.5, "lines"),
+                      legend.position = "bottom"
+              ) +
+           scale_color_viridis_d() + 
+             scale_x_continuous(breaks=seq(2005,2025,by=2)) +
+               scale_y_continuous(labels = scales::comma) +
+        guides(col = guide_legend(ncol = 15))+
+          labs(title = "Motivo de la ausencia 2005-2019",
+                subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                  y="Rate",
+                    x="Year",
+                     color="Series") 
+```
+
+
+```{r}
+tabla <- ts(rbind(groups, fcst2),
+                  start=start(groups), frequency=4) #Frecuencia al año
+```
+
+### Nivel 0: Total de casos de migración  
+
+```{r}
+#http://www.sthda.com/english/wiki/ggplot2-line-types-how-to-change-line-types-of-a-graph-in-r-software
+autoplot(tabla[,"Total"],colour="#1720B7",size=1.2,alpha=0.6,linetype="dashed") +      
+  geom_vline(xintercept=2019.5,color="#A8ABD7",linetype="dashed") +
+     theme_classic() +
+       theme(plot.title = element_text(size=20),
+             plot.subtitle = element_text(size=12)
+             ) + 
+          scale_x_continuous(breaks=seq(2005,2025,by=2)) +
+    labs(title = "Motivo de la ausencia 2005-2019",
+           subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+             y="Rate",
+               x="Year",
+                color="Series") 
+```
+
+### Nivel 1 a 2: Nivel región y nivel ciudad    
+
+```{r,fig.width=10,fig.height=5}
+as_tibble(tabla[,-1]) %>%
+  tidyr::gather(Series) %>%
+    mutate(Date = rep(time(tabla), NCOL(tabla)-1),
+           Group = str_extract(Series, "([A-Za-z ]*)")
+           ) %>%
+      ggplot(aes(x=Date, y=value, group=Series, colour=Series)) +
+        geom_line() +
+          geom_vline(xintercept=2019,color="#A8ABD7",linetype="dashed") +
+            theme_classic() + 
+              theme(plot.title = element_text(size=20),
+                     plot.subtitle = element_text(size=12),
+                      axis.text.x = element_text(angle=90, hjust=1),
+                        legend.text = element_text(size=8),
+                          legend.key.width=unit(0.2,"cm"),
+                            legend.key.height = unit(0,"cm"),
+                              legend.spacing.x = unit(0.1,"cm"),
+                                legend.key.size = unit(0.5, "lines"),
+                                  legend.position = "bottom"
+                    ) +
+                 scale_color_viridis_d() +
+                   scale_x_continuous(breaks=seq(2005,2025,by=5)) +
+            guides(col = guide_legend(ncol = 15)) +
+              labs(title = "Motivo de la ausencia 2005-2019",
+                     subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                      y="Rate",
+                        x="Year",
+                          color="Series") +
+                  facet_wrap(.~Group) 
+```
+
+### Nivel 3: Motivos de ausencia en general   
+
+```{r}
+fcst3 <- aggts(f.modelo2,levels=3)
+groups <- aggts(Modelo2, levels=3)
+tabla <- ts(rbind(groups, fcst3),start=start(groups), frequency=4) #Frecuencia al año
+
+```
+
+```{r,fig.width=10,fig.height=13}
+as_tibble(tabla[,-1]) %>%
+  tidyr::gather(Series) %>%
+    mutate(Date = rep(time(tabla), NCOL(tabla)-1),
+           Group = str_extract(Series, "([A-Za-z ]*)"),
+           Motivo=stringr::str_sub(Series,5,7)
+           ) %>%
+       ggplot(aes(x=Date, y=value, group=Series, colour=Series)) +
+         geom_line() +
+           geom_vline(xintercept=2019,color="#A8ABD7",linetype="dashed") +
+            theme_classic() + 
+              theme(plot.title = element_text(size=20),
+                     plot.subtitle = element_text(size=12),
+                      axis.text.x = element_text(angle=90, hjust=1),
+                       legend.text = element_text(size=6),
+                        legend.key.width=unit(0.2,"cm"),
+                         legend.key.height = unit(0,"cm"),
+                          legend.spacing.x = unit(0.1,"cm"),
+                           legend.key.size = unit(0.01, "lines"),
+                            legend.position = "bottom"
+                    ) +
+                 scale_color_viridis_d() +
+                   scale_x_continuous(breaks=seq(2005,2025,by=5)) +
+          guides(col = guide_legend(ncol = 15)) +
+            labs(title = "Motivo de la ausencia 2005-2019",
+                   subtitle = "Trabajo / Estudio / Se casó o unió / Divorció o separó / Reunirse con un familiar",
+                    y="Rate",
+                      x="Year",
+                        color="Series") +
+              facet_wrap(.~Group+Motivo)
+```
+
+# Librerías  
+
+**Librerías que se usaron en el trabajo**   
+
+```{r}
+names(sessionInfo()$otherPkgs)
+```
+
+Nos ha servido a construir modelos de series de tiempo con datos estructurales para fines de pronósticos. 
+
+# Bibliografía
+
+Encuesta Nacional de Ocupación y Empleo (ENOE), población de 15 años y más de edad. (n.d.). Retrieved March 30, 2020, from https://www.inegi.org.mx/programas/enoe/15ymas/  
+
+Forecasting Hierarchical Time Series using R - Brillio Data Science - Medium. (n.d.). Retrieved March 30, 2020, from https://medium.com/brillio-data-science/forecasting-hierarchical-time-series-using-r-598828dba435   
