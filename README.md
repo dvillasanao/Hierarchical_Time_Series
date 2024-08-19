@@ -53,6 +53,10 @@ que condujo a mejores pronósticos.
 En comparación con los modelos ARIMA y Random Walk, muchos de los
 resultados empíricos no fueron concluyentes para varios enfoques.
 
+- Hierarquical Time Series:
+  [Script](https://dvillasanao.github.io/Hierarchical_Time_Series/Hierarchical%20Time%20Series.nb.html)
+- Cross Validation: [Script](Validación%20Cruzada.nb.html)
+
 ## Estructura del Repositorio
 
 - `data/`: Contiene los datos utilizados en el análisis.  
