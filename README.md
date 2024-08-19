@@ -13,6 +13,8 @@ Los datos jerárquicos utilizados tienen tres niveles de desagregación:
 - **Nivel 2**: 32 tasas de migración a nivel ciudad.  
 - **Nivel 3**: Descomposición de los 5 motivos de migración.
 
+![](img/Región.png)
+
 ## Metodología
 
 El enfoque de abajo hacia arriba (`bottom-up`) se empleó para trabajar
@@ -57,7 +59,7 @@ resultados empíricos no fueron concluyentes para varios enfoques.
 - `scripts/`: Scripts de R utilizados para el análisis y modelado.  
 - `results/`: Resultados del análisis, incluyendo gráficos y tablas.
 
-## Instalación
+## 📦 Instalación
 
 Para instalar los paquetes necesarios en R, ejecutar:
 

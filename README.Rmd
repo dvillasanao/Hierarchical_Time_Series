@@ -13,6 +13,8 @@ En este repositorio se presenta una aplicación del modelo de series temporales 
 - **Nivel 2**: 32 tasas de migración a nivel ciudad.  
 - **Nivel 3**: Descomposición de los 5 motivos de migración.  
 
+![](img/Región.png)
+
 ## Metodología   
 
 El enfoque de abajo hacia arriba (`bottom-up`) se empleó para trabajar con 160 series de nivel inferior y, utilizando la matriz de sumas, se agregaron los valores ajustados para obtener una tasa de migración global ajustada.  
@@ -38,7 +40,7 @@ En comparación con los modelos ARIMA y Random Walk, muchos de los resultados em
 - `results/`: Resultados del análisis, incluyendo gráficos y tablas.   
 
 
-## Instalación
+## 📦 Instalación
 
 Para instalar los paquetes necesarios en R, ejecutar:
 
