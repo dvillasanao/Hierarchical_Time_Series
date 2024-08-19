@@ -55,7 +55,8 @@ resultados empíricos no fueron concluyentes para varios enfoques.
 
 - Hierarquical Time Series:
   [Script](https://dvillasanao.github.io/Hierarchical_Time_Series/Hierarchical%20Time%20Series.nb.html)
-- Cross Validation: [Script](Validación%20Cruzada.nb.html)
+- Cross Validation:
+  [Script](https://dvillasanao.github.io/Hierarchical_Time_Series/Validación%20Cruzada.nb.html)
 
 ## Estructura del Repositorio
 
